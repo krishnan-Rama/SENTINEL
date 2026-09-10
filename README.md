@@ -293,17 +293,7 @@ starting points, which supports detection of moderate to large effects and nothi
 
 ---
 
-## Citing
-
-Please cite the paper (details on acceptance) and this repository. `CITATION.cff` is
-included and GitHub renders it as a citation box.
-
-## Licence
-
-MIT.
 
 ## Contact
 
-Rama Krishnan, School of Biosciences, Cardiff University. Issues and pull requests welcome.
-If a stage failed, the output of `bin/sentinel doctor` plus the relevant `*_report.tsv` or
-`*_qc.tsv` is usually enough to diagnose it.
+Rama Krishnan, School of Biosciences, Cardiff University: krishnanr1@cardiff.ac.uk
