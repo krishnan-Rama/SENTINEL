@@ -28,7 +28,7 @@ reports.
 ## Install and run
 
 ```bash
-git clone https://github.com/<you>/sentinel.git
+git clone https://github.com/krishnan-Rama/SENTINEL.git
 cd sentinel
 
 conda env create -f environment.yml && conda activate sentinel
