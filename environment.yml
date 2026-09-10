@@ -1,0 +1,22 @@
+name: miestro
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.11
+  - numpy>=1.26
+  - scipy>=1.11
+  - matplotlib>=3.8
+  - rdkit>=2023.9
+  - mafft>=7.5
+  - hmmer>=3.4
+  - fasttree
+  - raxml-ng>=1.2
+  - openbabel>=3.1
+  - meeko
+  - vina
+  # LocalColabFold is not installable from conda. Install it separately and
+  # point COLABFOLD_ENV at its bin directory:
+  #   https://github.com/YoshitakaMo/localcolabfold
+  # It needs hhsearch on PATH if templates are enabled:
+  #   conda install -c bioconda hhsuite

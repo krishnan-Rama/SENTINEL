@@ -1,0 +1,727 @@
+#!/usr/bin/env bash
+#
+# SENTINEL: Species sENsitivity from Target INteraction and Evolutionary Lineage.
+#
+# One driver for the whole workflow. It knows the stage order, what each stage
+# needs, and how to hand the two expensive stages to a scheduler. Every stage is
+# also a standalone script; `--dry-run` prints the exact command so you can copy
+# it and run it yourself.
+#
+#   bin/sentinel --help
+#
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STAGEDIR="$REPO/stages"
+VERSION="0.1.0"
+
+# ---------------------------------------------------------------- defaults --
+CONFIG="$REPO/config/project.env"
+OUTDIR=""
+ENTRY="sequences"
+FROM=""; TO=""; ONLY=""; SKIP=""
+NO_DOCK=0; WITH_MINIMISE=0; WITH_ML_TREE=0
+DRYRUN=0; FORCE=0; QUIET=0
+HPC="slurm"
+PARTITION=""; GPU_PARTITION=""; ACCOUNT=""; QOS=""
+TIME_FOLD="24:00:00"; TIME_DOCK="12:00:00"; TIME_TREE="12:00:00"
+MAX_PARALLEL=""
+THREADS=""; CHUNK=""
+MIN_ICC=""; MIN_CLADE_N=""; SEEDS=""; EXHAUSTIVENESS=""
+DOMAIN_START=""; DOMAIN_END=""
+ECOTOX_TABLE=""; UNIPROT_CONTACT=""; SPECIES_TREE=""
+EXT_MODELS=""; EXT_ALIGNMENT=""; EXT_DOCKED=""; EXT_LIGANDS=""
+
+# ------------------------------------------------------------------- usage --
+usage() {
+cat <<'USAGE'
+SENTINEL - molecular initiating event to species sensitivity
+
+  bin/sentinel [options] <command>
+
+COMMANDS
+  run                 run the pipeline over the selected stages
+  status              show which stages have produced their key output
+  stages              list the stages in order
+  doctor              check external tools, inputs and configuration
+  version
+
+WHERE TO START
+  --entry sequences   (default) you have a species list and a toxicity table.
+                      Runs everything: retrieval, orthologue verification,
+                      structure prediction, docking, analysis.
+  --entry structures  you already have predicted models. Skips to quality
+                      control. Requires --models and --alignment.
+  --entry poses       you already have docking results. Skips to the docking
+                      analysis. Requires --docked and --alignment.
+  --entry analysis    you have the descriptor and affinity tables already.
+                      Runs association testing and the report only.
+
+SELECTING STAGES
+  --from ID           first stage to run, e.g. --from 5A
+  --to ID             last stage to run, e.g. --to 8D
+  --only ID[,ID...]   run exactly these stages
+  --skip ID[,ID...]   run the plan but omit these
+  --no-dock           stop after structural descriptors (stage 7). Use when you
+                      want the orthologue and structure half only.
+  --with-ml-tree      also run 3C, the bootstrapped publication phylogeny
+  --with-minimise     also run 5C, explicit-solvent minimisation (only needed
+                      if you are going on to molecular dynamics)
+
+PATHS
+  -o, --outdir DIR    where everything is written. Overrides the config.
+  -c, --config FILE   config file to read defaults from
+  --ecotox FILE       cleaned toxicity table, one row per species
+  --contact EMAIL     address sent to UniProt in the User-Agent header
+  --species-tree FILE dated species tree in Newick. Strongly recommended; see
+                      docs/INPUTS.md for why the gene-tree fallback is not
+                      adequate for the phylogenetic models.
+  --models DIR        existing predicted structures (--entry structures)
+  --alignment FILE    existing profile alignment in A2M
+  --docked DIR        existing docking output (--entry poses)
+  --ligands DIR       existing prepared ligand panel
+
+COMPUTE
+  --hpc slurm|local   submit array jobs, or print the commands instead
+  --partition NAME    CPU partition for docking, tree building, minimisation
+  --gpu-partition NAME  GPU partition for structure prediction
+  --account NAME      SLURM account
+  --qos NAME          SLURM quality of service
+  --time-fold HH:MM:SS   wall clock per folding array task   (default 24:00:00)
+  --time-dock HH:MM:SS   wall clock per docking array task   (default 12:00:00)
+  --time-tree HH:MM:SS   wall clock for the phylogeny        (default 12:00:00)
+  --max-parallel N    cap concurrent array tasks
+  --threads N         threads for alignment and tree building
+  --chunk N           sequences per folding array task
+
+ANALYSIS
+  --min-icc F         reliability floor for structural descriptors (0.75)
+  --min-clade-n N     smallest clade given its own within-clade refit (8)
+  --seeds "1 2 3"     docking seeds per receptor-ligand pair
+  --exhaustiveness N  Vina exhaustiveness (32)
+  --domain START END  target domain range in the reference numbering (1 537)
+
+BEHAVIOUR
+  -n, --dry-run       print commands without running them
+  -f, --force         rerun stages whose output already exists
+  -q, --quiet         less commentary
+  -h, --help
+
+EXAMPLES
+  # full run on a cluster
+  bin/sentinel -o ~/runs/cpf_ache --gpu-partition gpu --partition epyc run
+
+  # I have AlphaFold models already, take it from there
+  bin/sentinel -o ~/runs/mine --entry structures \
+      --models ~/models --alignment ~/runs/mine/CLASSIFY/aligned.a2m run
+
+  # orthologues and structures only, no docking
+  bin/sentinel -o ~/runs/mine --no-dock run
+
+  # redo just the association testing after changing the tree
+  bin/sentinel -o ~/runs/mine --species-tree timetree.nwk --only 10B,11 run
+
+  # see what would happen
+  bin/sentinel -o ~/runs/mine -n run
+USAGE
+}
+
+# ------------------------------------------------------------ argument pass --
+CMD=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -c|--config)        CONFIG="$2"; shift 2 ;;
+    -o|--outdir)        OUTDIR="$2"; shift 2 ;;
+    --entry)            ENTRY="$2"; shift 2 ;;
+    --from)             FROM="$2"; shift 2 ;;
+    --to)               TO="$2"; shift 2 ;;
+    --only)             ONLY="$2"; shift 2 ;;
+    --skip)             SKIP="$2"; shift 2 ;;
+    --no-dock)          NO_DOCK=1; shift ;;
+    --with-minimise)    WITH_MINIMISE=1; shift ;;
+    --with-ml-tree)     WITH_ML_TREE=1; shift ;;
+    --ecotox)           ECOTOX_TABLE="$2"; shift 2 ;;
+    --contact)          UNIPROT_CONTACT="$2"; shift 2 ;;
+    --species-tree)     SPECIES_TREE="$2"; shift 2 ;;
+    --models)           EXT_MODELS="$2"; shift 2 ;;
+    --alignment)        EXT_ALIGNMENT="$2"; shift 2 ;;
+    --docked)           EXT_DOCKED="$2"; shift 2 ;;
+    --ligands)          EXT_LIGANDS="$2"; shift 2 ;;
+    --hpc)              HPC="$2"; shift 2 ;;
+    --partition)        PARTITION="$2"; shift 2 ;;
+    --gpu-partition)    GPU_PARTITION="$2"; shift 2 ;;
+    --account)          ACCOUNT="$2"; shift 2 ;;
+    --qos)              QOS="$2"; shift 2 ;;
+    --time-fold)        TIME_FOLD="$2"; shift 2 ;;
+    --time-dock)        TIME_DOCK="$2"; shift 2 ;;
+    --time-tree)        TIME_TREE="$2"; shift 2 ;;
+    --max-parallel)     MAX_PARALLEL="$2"; shift 2 ;;
+    --threads)          THREADS="$2"; shift 2 ;;
+    --chunk)            CHUNK="$2"; shift 2 ;;
+    --min-icc)          MIN_ICC="$2"; shift 2 ;;
+    --min-clade-n)      MIN_CLADE_N="$2"; shift 2 ;;
+    --seeds)            SEEDS="$2"; shift 2 ;;
+    --exhaustiveness)   EXHAUSTIVENESS="$2"; shift 2 ;;
+    --domain)           DOMAIN_START="$2"; DOMAIN_END="$3"; shift 3 ;;
+    -n|--dry-run)       DRYRUN=1; shift ;;
+    -f|--force)         FORCE=1; shift ;;
+    -q|--quiet)         QUIET=1; shift ;;
+    -h|--help)          usage; exit 0 ;;
+    run|status|stages|doctor|version) CMD="$1"; shift ;;
+    *) echo "unknown option: $1" >&2; echo "try --help" >&2; exit 1 ;;
+  esac
+done
+CMD="${CMD:-status}"
+
+# The config file supplies defaults. Anything given on the command line wins,
+# so stash the command-line values, source the config, then put them back.
+OVERRIDABLE=(OUTDIR ECOTOX_TABLE UNIPROT_CONTACT SPECIES_TREE CHEMICAL TARGET
+             PARTITION GPU_PARTITION ACCOUNT QOS THREADS CHUNK
+             MIN_ICC MIN_CLADE_N DOMAIN_START DOMAIN_END)
+for v in "${OVERRIDABLE[@]}"; do
+  printf -v "CLI_$v" '%s' "${!v:-}"
+done
+if [[ -f "$CONFIG" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONFIG"
+fi
+for v in "${OVERRIDABLE[@]}"; do
+  cli="CLI_$v"
+  [[ -n "${!cli:-}" ]] && printf -v "$v" '%s' "${!cli}"
+done
+
+# config-only names, and the defaults for everything unset
+: "${OUTDIR:=${RUN_DIR:-}}"
+: "${THREADS:=${CFG_THREADS:-8}}"
+: "${CHUNK:=${FOLD_CHUNK:-12}}"
+: "${PARTITION:=${CPU_PARTITION:-}}"
+: "${ACCOUNT:=${SLURM_ACCOUNT:-}}"
+: "${MIN_ICC:=0.75}"
+: "${MIN_CLADE_N:=8}"
+: "${SEEDS:=1 2 3}"
+: "${EXHAUSTIVENESS:=32}"
+: "${DOMAIN_START:=1}"
+: "${DOMAIN_END:=537}"
+: "${CHEMICAL:=chemical}"
+: "${TARGET:=target}"
+
+[[ "$CMD" == "version" ]] && { echo "sentinel $VERSION"; exit 0; }
+[[ -n "$OUTDIR" ]] || { echo "no --outdir and no RUN_DIR in $CONFIG" >&2; exit 1; }
+R="$OUTDIR"
+
+# ---------------------------------------------------------------- registry --
+# id | file | kind | key output | one-line description
+STAGE_IDS=(1 2 3A 3B 3C 4A 4B 4C 5A 5B 5C 6 7 8A 8B 8C 8D 9A 9B 10A 10B 11)
+
+stage_file() { case "$1" in
+  1)   echo "1-anchors.py" ;;
+  2)   echo "2-retrieve_orthologues.py" ;;
+  3A)  echo "3A-classify_active_site.py" ;;
+  3B)  echo "3B-assign_by_tree.py" ;;
+  3C)  echo "3C-rebuild_tree.slurm" ;;
+  4A)  echo "4A-finalise_endpoints.py" ;;
+  4B)  echo "4B-build_final_set.py" ;;
+  4C)  echo "4C-build_master_table.py" ;;
+  5A)  echo "5A-prepare_for_folding.py" ;;
+  5B)  echo "5B-fold.slurm" ;;
+  5C)  echo "5C-minimise.slurm" ;;
+  6)   echo "6-qc_models.py" ;;
+  7)   echo "7-structural_descriptors.py" ;;
+  8A)  echo "8A-prepare_ligands.py" ;;
+  8B)  echo "8B-prep_receptors.py" ;;
+  8C)  echo "8C-convert_receptors.py" ;;
+  8D)  echo "8D-dock.slurm" ;;
+  9A)  echo "9A-analyse_docking.py" ;;
+  9B)  echo "9B-analyse_biphasic.py" ;;
+  10A) echo "10A-phylo_ssd.py" ;;
+  10B) echo "10B-model_sensitivity.py" ;;
+  11)  echo "11-build_report.py" ;;
+esac; }
+
+stage_desc() { case "$1" in
+  1)   echo "verify the reference backbone by accession" ;;
+  2)   echo "retrieve candidate orthologues per species" ;;
+  3A)  echo "positional active-site classification" ;;
+  3B)  echo "clade assignment by tree, one representative per species" ;;
+  3C)  echo "bootstrapped publication phylogeny" ;;
+  4A)  echo "collapse endpoints to one row per species" ;;
+  4B)  echo "build the endpoint and prediction sets" ;;
+  4C)  echo "master table, one row per sequence" ;;
+  5A)  echo "trim to the catalytic domain, write folding chunks" ;;
+  5B)  echo "predict five structural models per sequence" ;;
+  5C)  echo "explicit-solvent minimisation" ;;
+  6)   echo "active-site pLDDT and the between-seed noise floor" ;;
+  7)   echo "gorge descriptors on all models, with ICC" ;;
+  8A)  echo "build and identity-check the ligand panel" ;;
+  8B)  echo "catalytic geometry and a per-species docking box" ;;
+  8C)  echo "PDBQT conversion with a tautomer check" ;;
+  8D)  echo "dock, three seeds per receptor-ligand pair" ;;
+  9A)  echo "affinity reliability, near-attack geometry, contacts" ;;
+  9B)  echo "biphasic site occupancy along the gorge axis" ;;
+  10A) echo "phylogenetic signal, SSD, per-step figures" ;;
+  10B) echo "association testing, confound decomposition, validation" ;;
+  11)  echo "single-file gated HTML report" ;;
+esac; }
+
+stage_out() { case "$1" in
+  1)   echo "S1_sequences/anchors/reference_backbone.faa" ;;
+  2)   echo "ODB/species_inventory.tsv" ;;
+  3A)  echo "CLASSIFY/active_site_calls.tsv" ;;
+  3B)  echo "TREE/representatives.tsv" ;;
+  3C)  echo "PHYLO/ache.raxml.support" ;;
+  4A)  echo "FINAL/endpoint_species.tsv" ;;
+  4B)  echo "FINAL_SET/endpoint_final.tsv" ;;
+  4C)  echo "master_table.csv" ;;
+  5A)  echo "FOLD/trim_report.tsv" ;;
+  5B)  echo "FOLD/models" ;;
+  5C)  echo "EM/em_report.tsv" ;;
+  6)   echo "QC/model_qc.tsv" ;;
+  7)   echo "STRUCT/descriptors_species.tsv" ;;
+  8A)  echo "LIGANDS/ligand_manifest.tsv" ;;
+  8B)  echo "RECEPTORS/receptor_prep.tsv" ;;
+  8C)  echo "RECEPTORS/pdbqt/receptor_pdbqt_qc.tsv" ;;
+  8D)  echo "DOCKED" ;;
+  9A)  echo "DOCKANALYSIS/affinity_species.tsv" ;;
+  9B)  echo "BIPHASIC/penetration_icc.tsv" ;;
+  10A) echo "FIGURES" ;;
+  10B) echo "MODEL/univariate_results.tsv" ;;
+  11)  echo "DASHBOARD/index.html" ;;
+esac; }
+
+# ---------------------------------------------------------------- helpers --
+say()  { [[ $QUIET -eq 1 ]] || printf '\n\033[1m== %s  %s\033[0m\n' "$1" "$(stage_desc "$1")"; }
+note() { [[ $QUIET -eq 1 ]] || printf '   %s\n' "$*"; }
+warn() { printf '   ! %s\n' "$*" >&2; }
+die()  { printf '\nSTOP: %s\n\n' "$*" >&2; exit 1; }
+
+idx_of() { local i=0; for s in "${STAGE_IDS[@]}"; do [[ "$s" == "$1" ]] && { echo "$i"; return; }; i=$((i+1)); done; echo -1; }
+
+need() {
+  [[ -e "$1" ]] && return 0
+  if [[ $DRYRUN -eq 1 ]]; then warn "would need: $1 ($2)"; return 0; fi
+  die "missing input: $1
+   $2"
+}
+
+need_script() {
+  local f="$STAGEDIR/$1"
+  [[ -f "$f" ]] && return 0
+  if [[ $DRYRUN -eq 1 ]]; then warn "$1 is not in this release, this stage would stop here"; return 0; fi
+  die "$1 is not in this repository.
+   It is part of the workflow but was not in the first release. What it
+   produces, and what you can substitute, is in
+   docs/STAGES.md, section 'Scripts not yet released'.
+   To carry on without it, supply its output yourself and rerun with
+   --from <the next stage>."
+}
+
+run() {
+  if [[ $DRYRUN -eq 1 ]]; then printf '   $ %s\n' "$*"; return 0; fi
+  note "$ $*"
+  "$@"
+}
+
+sbatch_opts() {
+  local part="$1" tlimit="$2"
+  local -a o=()
+  [[ -n "$part"    ]] && o+=(--partition="$part")
+  [[ -n "$ACCOUNT" ]] && o+=(--account="$ACCOUNT")
+  [[ -n "$QOS"     ]] && o+=(--qos="$QOS")
+  [[ -n "$tlimit"  ]] && o+=(--time="$tlimit")
+  printf '%s\n' "${o[@]:-}"
+}
+
+submit() {
+  # submit <n_tasks|0> <partition> <time> <script> [args...]
+  local n="$1" part="$2" tl="$3" script="$4"; shift 4
+  local arr=""
+  if [[ "$n" -gt 0 ]]; then
+    arr="--array=0-$((n-1))"
+    [[ -n "$MAX_PARALLEL" ]] && arr="${arr}%${MAX_PARALLEL}"
+  fi
+  local -a opts=(); mapfile -t opts < <(sbatch_opts "$part" "$tl")
+  if [[ "$HPC" != "slurm" || $DRYRUN -eq 1 ]]; then
+    printf '   $ sbatch %s %s %s %s\n' "$arr" "${opts[*]}" "$script" "$*"
+    [[ "$HPC" != "slurm" ]] && warn "--hpc $HPC, so this was not submitted. Run the command above."
+    return 0
+  fi
+  note "submitting $script ${arr:-(single task)}"
+  local jid
+  jid=$(sbatch --parsable --wait $arr "${opts[@]}" "$script" "$@")
+  note "job $jid finished"
+}
+
+endpoints_table() {
+  if [[ -s "$R/REPORT/analysis_set.tsv" ]]; then echo "$R/REPORT/analysis_set.tsv"
+  else echo "$R/FINAL_SET/endpoint_final.tsv"; fi
+}
+
+alignment_file() {
+  if [[ -n "$EXT_ALIGNMENT" ]]; then echo "$EXT_ALIGNMENT"
+  else echo "$R/CLASSIFY/aligned.a2m"; fi
+}
+
+models_dir() {
+  if [[ -n "$EXT_MODELS" ]]; then echo "$EXT_MODELS"; else echo "$R/FOLD/models"; fi
+}
+
+docked_dir() {
+  if [[ -n "$EXT_DOCKED" ]]; then echo "$EXT_DOCKED"; else echo "$R/DOCKED"; fi
+}
+
+ligands_dir() {
+  if [[ -n "$EXT_LIGANDS" ]]; then echo "$EXT_LIGANDS"; else echo "$R/LIGANDS"; fi
+}
+
+# ----------------------------------------------------------------- stages --
+do_1() {
+  need_script "$(stage_file 1)"
+  [[ -n "$UNIPROT_CONTACT" ]] || die "stage 1 needs --contact you@example.ac.uk"
+  run python3 "$STAGEDIR/1-anchors.py" --outdir "$R/S1_sequences" --contact "$UNIPROT_CONTACT"
+}
+
+do_2() {
+  need_script "$(stage_file 2)"
+  need "$ECOTOX_TABLE" "set --ecotox to a cleaned toxicity table (docs/INPUTS.md)"
+  run python3 "$STAGEDIR/2-retrieve_orthologues.py" --outdir "$R/ODB" --ecotox "$ECOTOX_TABLE"
+}
+
+do_3A() {
+  need "$R/ODB/by_species" "run stage 2, or supply ODB/by_species yourself"
+  need "$R/S1_sequences/anchors/reference_backbone.faa" "run stage 1"
+  run python3 "$STAGEDIR/3A-classify_active_site.py" \
+      --candidates "$R/ODB/by_species" \
+      --anchors "$R/S1_sequences/anchors/reference_backbone.faa" \
+      --outdir "$R/CLASSIFY" --threads "$THREADS"
+}
+
+do_3B() {
+  need "$R/CLASSIFY/active_site_calls.tsv" "run stage 3A"
+  run python3 "$STAGEDIR/3B-assign_by_tree.py" \
+      --classify "$R/CLASSIFY" \
+      --anchors "$R/S1_sequences/anchors/reference_backbone.faa" \
+      --outdir "$R/TREE" --threads "$THREADS"
+}
+
+do_3C() {
+  need "$R/CLASSIFY/active_site_calls.tsv" "run stage 3A"
+  ( cd "$R" && ROOT="$R" CLASSIFY="$R/CLASSIFY" \
+      ANCHORS="$R/S1_sequences/anchors/reference_backbone.faa" OUT="$R/PHYLO" \
+      submit 0 "$PARTITION" "$TIME_TREE" "$STAGEDIR/3C-rebuild_tree.slurm" )
+}
+
+do_4A() {
+  need_script "$(stage_file 4A)"
+  need "$ECOTOX_TABLE" "set --ecotox"
+  run python3 "$STAGEDIR/4A-finalise_endpoints.py" \
+      --ecotox "$ECOTOX_TABLE" --odb "$R/ODB" --outdir "$R/FINAL"
+}
+
+do_4B() {
+  need "$R/TREE/representatives.tsv" "run stage 3B"
+  run python3 "$STAGEDIR/4B-build_final_set.py" \
+      --final "$R/FINAL" --tree "$R/TREE" --outdir "$R/FINAL_SET"
+}
+
+do_4C() {
+  run python3 "$STAGEDIR/4C-build_master_table.py" \
+      --classify "$R/CLASSIFY" --tree "$R/TREE" --odb "$R/ODB" \
+      --final "$R/FINAL" --final-set "$R/FINAL_SET" \
+      --ecotox "$ECOTOX_TABLE" --out "$R/master_table.csv"
+}
+
+do_5A() {
+  need "$R/FINAL_SET/endpoint_final.tsv" "run stage 4B"
+  run python3 "$STAGEDIR/5A-prepare_for_folding.py" \
+      --aln "$(alignment_file)" \
+      --fasta "$R/FINAL_SET/endpoint_final.tsv" "$R/FINAL_SET/prediction_final.tsv" \
+      --outdir "$R/FOLD" --chunk "$CHUNK" \
+      --start "$DOMAIN_START" --end "$DOMAIN_END"
+}
+
+do_5B() {
+  local n
+  n=$(ls "$R/FOLD/chunks"/chunk_*.fasta 2>/dev/null | wc -l)
+  if [[ "$n" -eq 0 && $DRYRUN -eq 0 ]]; then
+    die "no folding chunks at $R/FOLD/chunks. Run stage 5A, and read
+   $R/FOLD/trim_report.tsv if it wrote none."
+  fi
+  [[ "$n" -eq 0 ]] && n=1
+  note "$n array tasks, up to $CHUNK sequences each"
+  ( cd "$R" && submit "$n" "$GPU_PARTITION" "$TIME_FOLD" \
+      "$STAGEDIR/5B-fold.slurm" "$R/FOLD/chunks" "$R/FOLD/models" )
+}
+
+do_5C() {
+  ( cd "$R" && ROOT="$R" submit 0 "$PARTITION" "$TIME_FOLD" \
+      "$STAGEDIR/5C-minimise.slurm" "$(models_dir)" "$R/EM" )
+}
+
+do_6() {
+  need "$(alignment_file)" "supply --alignment, or run stage 3A"
+  need "$(models_dir)" "supply --models, or run stage 5B"
+  run python3 "$STAGEDIR/6-qc_models.py" \
+      --models "$(models_dir)" --aln "$(alignment_file)" \
+      --final-set "$R/FINAL_SET" --outdir "$R/QC" \
+      --start "$DOMAIN_START" --end "$DOMAIN_END"
+}
+
+do_7() {
+  need "$R/QC/model_qc.tsv" "run stage 6"
+  run python3 "$STAGEDIR/7-structural_descriptors.py" \
+      --models "$(models_dir)" --aln "$(alignment_file)" \
+      --qc "$R/QC/model_qc.tsv" --outdir "$R/STRUCT" \
+      --start "$DOMAIN_START" --end "$DOMAIN_END"
+}
+
+do_8A() {
+  run python3 "$STAGEDIR/8A-prepare_ligands.py" --outdir "$R/LIGANDS"
+}
+
+do_8B() {
+  need "$R/QC/model_qc.tsv" "run stage 6"
+  run python3 "$STAGEDIR/8B-prep_receptors.py" \
+      --models "$R/QC/best_models" --aln "$(alignment_file)" \
+      --qc "$R/QC/model_qc.tsv" --outdir "$R/RECEPTORS" \
+      --start "$DOMAIN_START" --end "$DOMAIN_END"
+}
+
+do_8C() {
+  need "$R/RECEPTORS/receptor_prep.tsv" "run stage 8B"
+  run python3 "$STAGEDIR/8C-convert_receptors.py" \
+      --prepped "$R/RECEPTORS/prepped" \
+      --prep-table "$R/RECEPTORS/receptor_prep.tsv" \
+      --outdir "$R/RECEPTORS/pdbqt"
+}
+
+do_8D() {
+  local qc="$R/RECEPTORS/pdbqt/receptor_pdbqt_qc.tsv" n=1
+  if [[ -s "$qc" ]]; then
+    n=$(awk -F'\t' '{gsub(/\r/,"")} NR>1 && $2=="ok"' "$qc" | wc -l)
+    [[ "$n" -gt 0 ]] || die "no receptor passed the tautomer check. Read $qc.
+   A receptor with the proton on NE2 has an unactivated nucleophile and
+   docking into it measures a dead enzyme."
+    note "$n receptors ready"
+  elif [[ $DRYRUN -eq 0 ]]; then
+    die "missing $qc. Run stage 8C."
+  fi
+  ( cd "$R" && SEEDS="$SEEDS" EXH="$EXHAUSTIVENESS" \
+      PREP_TABLE="$R/RECEPTORS/receptor_prep.tsv" \
+      submit "$n" "$PARTITION" "$TIME_DOCK" "$STAGEDIR/8D-dock.slurm" \
+      "$R/RECEPTORS/pdbqt" "$(ligands_dir)" "$R/DOCKED" )
+}
+
+do_9A() {
+  need "$(docked_dir)" "supply --docked, or run stage 8D"
+  need "$R/RECEPTORS/receptor_prep.tsv" "run stage 8B"
+  run python3 "$STAGEDIR/9A-analyse_docking.py" \
+      --docked "$(docked_dir)" --receptors "$R/RECEPTORS/prepped" \
+      --prep "$R/RECEPTORS/receptor_prep.tsv" --aln "$(alignment_file)" \
+      --endpoints "$(endpoints_table)" --outdir "$R/DOCKANALYSIS" \
+      --start "$DOMAIN_START" --end "$DOMAIN_END"
+}
+
+do_9B() {
+  need "$(docked_dir)" "supply --docked, or run stage 8D"
+  run python3 "$STAGEDIR/9B-analyse_biphasic.py" \
+      --docked "$(docked_dir)" --prep "$R/RECEPTORS/receptor_prep.tsv" \
+      --endpoints "$(endpoints_table)" --outdir "$R/BIPHASIC"
+}
+
+do_10A() {
+  run python3 "$STAGEDIR/10A-phylo_ssd.py" \
+      --report "$(dirname "$(endpoints_table)")" --classify "$R/CLASSIFY" \
+      --tree "${SPECIES_TREE:-$R/TREE}" --outdir "$R/FIGURES"
+}
+
+do_10B() {
+  local tree="${SPECIES_TREE:-}"
+  if [[ -z "$tree" ]]; then
+    tree="$R/TREE"
+    warn "no --species-tree given, falling back to the gene tree."
+    warn "A gene tree groups by paralogue before taxonomy and its branch"
+    warn "lengths are divergence, not time. Treat the phylogenetic signal it"
+    warn "reports as a diagnostic, not a result. See docs/INPUTS.md."
+  fi
+  local -a opt=()
+  [[ -s "$R/STRUCT/descriptors_species.tsv" ]] && opt+=(--descriptors "$R/STRUCT/descriptors_species.tsv" --descriptor-icc "$R/STRUCT/variance_partition.tsv")
+  [[ -s "$R/BIPHASIC/penetration_descriptors.tsv" ]] && opt+=(--penetration "$R/BIPHASIC/penetration_descriptors.tsv" --penetration-icc "$R/BIPHASIC/penetration_icc.tsv")
+  [[ -s "$R/DOCKANALYSIS/affinity_species.tsv" ]] && opt+=(--affinity "$R/DOCKANALYSIS/affinity_species.tsv" --affinity-icc "$R/DOCKANALYSIS/affinity_variance.tsv")
+  [[ -s "$R/DOCKANALYSIS/nac_geometry.tsv" ]] && opt+=(--geometry "$R/DOCKANALYSIS/nac_geometry.tsv")
+  if [[ ${#opt[@]} -eq 0 ]]; then
+    if [[ $DRYRUN -eq 1 ]]; then warn "no predictor tables under $R yet"; opt+=(--descriptors "$R/STRUCT/descriptors_species.tsv" --descriptor-icc "$R/STRUCT/variance_partition.tsv"); else
+    die "no predictor tables found under $R.
+   Run at least stage 7, or point --outdir at a run that has them."
+    fi
+  fi
+  run python3 "$STAGEDIR/10B-model_sensitivity.py" \
+      --endpoints "$(endpoints_table)" "${opt[@]}" \
+      --tree "$tree" --min-icc "$MIN_ICC" --min-clade-n "$MIN_CLADE_N" \
+      --outdir "$R/MODEL"
+}
+
+do_11() {
+  run python3 "$STAGEDIR/11-build_report.py" --root "$R" --outdir "$R/DASHBOARD" \
+      --chemical "$CHEMICAL" --target "$TARGET" \
+      ${SPECIES_TREE:+--tree "$SPECIES_TREE"}
+  note "open $R/DASHBOARD/index.html"
+}
+
+# -------------------------------------------------------------- the plan --
+build_plan() {
+  local -a plan=()
+  if [[ -n "$ONLY" ]]; then
+    IFS=',' read -ra plan <<< "$ONLY"
+    printf '%s\n' "${plan[@]}"; return
+  fi
+
+  local start="$FROM" stop="$TO"
+  if [[ -z "$start" ]]; then
+    case "$ENTRY" in
+      sequences)  start=1 ;;
+      structures) start=6 ;;
+      poses)      start=9A ;;
+      analysis)   start=10A ;;
+      *) die "unknown --entry '$ENTRY'. One of: sequences structures poses analysis" ;;
+    esac
+  fi
+  [[ -z "$stop" ]] && stop=11
+  [[ $NO_DOCK -eq 1 ]] && stop=7
+
+  local i j
+  i=$(idx_of "$start"); j=$(idx_of "$stop")
+  [[ "$i" -ge 0 ]] || die "unknown stage id '$start'"
+  [[ "$j" -ge 0 ]] || die "unknown stage id '$stop'"
+  [[ "$i" -le "$j" ]] || die "--from $start comes after --to $stop"
+
+  local k
+  for ((k=i; k<=j; k++)); do
+    local s="${STAGE_IDS[$k]}"
+    [[ "$s" == "3C" && $WITH_ML_TREE -eq 0 ]] && continue
+    [[ "$s" == "5C" && $WITH_MINIMISE -eq 0 ]] && continue
+    [[ ",$SKIP," == *",$s,"* ]] && continue
+    plan+=("$s")
+  done
+  printf '%s\n' "${plan[@]}"
+}
+
+preflight() {
+  # entry points that start mid-pipeline need their inputs named explicitly
+  case "$ENTRY" in
+    structures)
+      [[ -n "$EXT_MODELS" || -d "$R/FOLD/models" ]] || die \
+        "--entry structures needs --models DIR (your predicted structures)."
+      [[ -n "$EXT_ALIGNMENT" || -s "$R/CLASSIFY/aligned.a2m" ]] || die \
+        "--entry structures needs --alignment FILE.
+   The residue numbering frame comes from the profile alignment; without it
+   there is no way to know which residue in your model is the catalytic one.
+   Either point --alignment at an existing A2M, or run stages 1 to 3A first." ;;
+    poses)
+      [[ -n "$EXT_DOCKED" || -d "$R/DOCKED" ]] || die \
+        "--entry poses needs --docked DIR."
+      [[ -n "$EXT_ALIGNMENT" || -s "$R/CLASSIFY/aligned.a2m" ]] || die \
+        "--entry poses needs --alignment FILE for the contact mapping." ;;
+  esac
+}
+
+# ---------------------------------------------------------------- commands --
+cmd_stages() {
+  echo
+  printf '  %-5s %-34s %s\n' ID SCRIPT DESCRIPTION
+  for s in "${STAGE_IDS[@]}"; do
+    local mark=""
+    [[ "$s" == "3C" || "$s" == "5C" ]] && mark=" (optional)"
+    [[ -f "$STAGEDIR/$(stage_file "$s")" ]] || mark=" (NOT IN THIS RELEASE)"
+    printf '  %-5s %-34s %s%s\n' "$s" "$(stage_file "$s")" "$(stage_desc "$s")" "$mark"
+  done
+  echo
+  echo "  5B and 8D are dispatched as array jobs. Everything else is minutes."
+  echo
+}
+
+cmd_status() {
+  echo
+  printf '  outdir: %s\n\n' "$R"
+  printf '  %-5s %-8s %s\n' ID STATE 'KEY OUTPUT'
+  for s in "${STAGE_IDS[@]}"; do
+    local o; o="$(stage_out "$s")"
+    if [[ -e "$R/$o" ]]; then printf '  %-5s %-8s %s\n' "$s" done "$o"
+    else printf '  %-5s %-8s %s\n' "$s" -- "$o"; fi
+  done
+  echo
+}
+
+cmd_doctor() {
+  echo
+  echo "  sentinel $VERSION"
+  printf '  config : %s\n' "$CONFIG"
+  printf '  outdir : %s\n' "$R"
+  echo
+  echo "  external tools"
+  for t in python3 mafft hmmbuild hmmalign FastTree raxml-ng colabfold_batch vina obabel mk_prepare_ligand.py sbatch gmx; do
+    if command -v "$t" >/dev/null 2>&1; then printf '    ok      %-22s %s\n' "$t" "$(command -v "$t")"
+    else printf '    absent  %-22s\n' "$t"; fi
+  done
+  echo
+  echo "  python packages"
+  for m in numpy scipy matplotlib rdkit; do
+    if python3 -c "import $m" 2>/dev/null; then printf '    ok      %s\n' "$m"
+    else printf '    absent  %s\n' "$m"; fi
+  done
+  echo
+  echo "  inputs"
+  [[ -n "$ECOTOX_TABLE" && -s "$ECOTOX_TABLE" ]] \
+    && printf '    ok      toxicity table %s\n' "$ECOTOX_TABLE" \
+    || printf '    absent  toxicity table (--ecotox)\n'
+  [[ -n "$UNIPROT_CONTACT" ]] \
+    && printf '    ok      UniProt contact %s\n' "$UNIPROT_CONTACT" \
+    || printf '    absent  UniProt contact (--contact)\n'
+  if [[ -n "$SPECIES_TREE" && -s "$SPECIES_TREE" ]]; then
+    printf '    ok      dated species tree %s\n' "$SPECIES_TREE"
+  else
+    printf '    absent  dated species tree (--species-tree)\n'
+    printf '            the gene-tree fallback is a diagnostic, not a result\n'
+  fi
+  echo
+  echo "  scripts not in this release"
+  local miss=0
+  for s in "${STAGE_IDS[@]}"; do
+    [[ -f "$STAGEDIR/$(stage_file "$s")" ]] || { printf '    %-5s %s\n' "$s" "$(stage_file "$s")"; miss=1; }
+  done
+  [[ $miss -eq 0 ]] && echo "    none"
+  echo
+}
+
+cmd_run() {
+  mkdir -p "$R" "$R/logs"
+  preflight
+  local -a plan=(); mapfile -t plan < <(build_plan)
+  [[ ${#plan[@]} -gt 0 ]] || die "the selection is empty"
+
+  if [[ $QUIET -eq 0 ]]; then
+    printf '\n  plan: %s\n' "${plan[*]}"
+    printf '  outdir: %s\n' "$R"
+    [[ "$HPC" == "slurm" ]] && printf '  slurm: gpu=%s cpu=%s account=%s\n' \
+        "${GPU_PARTITION:-default}" "${PARTITION:-default}" "${ACCOUNT:-none}"
+    [[ $DRYRUN -eq 1 ]] && printf '  DRY RUN, nothing will be executed\n'
+  fi
+
+  for s in "${plan[@]}"; do
+    local out; out="$(stage_out "$s")"
+    if [[ -e "$R/$out" && $FORCE -eq 0 && $DRYRUN -eq 0 ]]; then
+      [[ $QUIET -eq 1 ]] || printf '\n\033[2m-- %-4s cached (%s). --force to redo.\033[0m\n' "$s" "$out"
+      continue
+    fi
+    say "$s"
+    "do_$s"
+  done
+  [[ $QUIET -eq 1 ]] || printf '\n  done. `bin/sentinel -o %s status` for the summary.\n\n' "$R"
+}
+
+case "$CMD" in
+  run)    cmd_run ;;
+  status) cmd_status ;;
+  stages) cmd_stages ;;
+  doctor) cmd_doctor ;;
+  *)      usage; exit 1 ;;
+esac
