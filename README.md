@@ -12,7 +12,7 @@ The pipeline is engineered for SLURM-managed HPC clusters, distributing GPU-acce
 
 ```mermaid
 flowchart TD
-    subgraph INP["Input Data"]
+    subgraph INP["<h3>Input Data<h3>"]
         direction TB
         I1["Target Sequences / Accessions"]
         I2["Chemical Structures (.sdf / SMILES)"]
