@@ -2,7 +2,7 @@
 
 **Species Sensitivity from Target Interaction and Evolutionary Lineage**
 
-SENTINEL models cross-species chemical susceptibilities by tracing evolutionary divergence in xenobiotic target proteins. By integrating comparative sequence analysis, 3D structural modelling, and binding simulations, the workflow translates molecular initiating events into predictive Species Sensitivity Distributions (SSDs) across uncharacterised taxa.
+SENTINEL models cross-species chemical susceptibilities by tracing evolutionary divergence in xenobiotic target proteins. By integrating comparative sequence analysis, 3D structural modelling, and binding simulations, the workflow translates molecular initiating events (MIE) into predictive Species Sensitivity Distributions (SSDs) across uncharacterised taxa.
 
 The pipeline is engineered for SLURM-managed HPC clusters, distributing GPU-accelerated structural predictions and parallel CPU tasks across cluster nodes.
 
