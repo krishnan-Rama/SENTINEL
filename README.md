@@ -51,7 +51,6 @@ Resume or start the pipeline from intermediate data using `--entry`:
 
 ### Execution Controls
 
-* **Stage selection:** `--from 5A`, `--to 8D`, `--only 8A,8B,8C`, or `--skip 4C`.
 * **Optional stages:** `--with-ml-tree` (bootstrapped publication phylogeny) and `--with-minimise` (explicit-solvent energy minimisation).
 * **Caching:** Completed stages are automatically skipped on rerun. Use `--force` to recompute.
 
