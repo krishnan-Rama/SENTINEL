@@ -2,136 +2,155 @@
 
 **S**pecies s**EN**sitivity from **T**arget **IN**teraction and **E**volutionary **L**ineage
 
-SENTINEL predicts cross-species chemical sensitivity distributions (SSDs) using target-ligand interactions and evolutionary phylogenetics. It provides an automated, auditable pipeline linking molecular initiating events to species-level sensitivity endpoints.
+SENTINEL automates the derivation and prediction of cross-species Species Sensitivity Distributions (SSDs). It bridges molecular initiating events and species-level toxicity thresholds by coupling evolutionary phylogenetics, AlphaFold structural ensembles, and molecular docking affinities into an auditable modelling pipeline.
+
+---
+
+## Requirements
+
+* **OS:** Linux (x86_64)
+* **Environment:** Conda or Mamba
+* **Hardware:** CUDA-capable GPU (required for ColabFold structural prediction; not required if using `--entry structures` or precomputed models)
+* **Cluster:** SLURM workload manager (optional; supported natively for parallel array jobs)
 
 ---
 
 ## Installation
 
 ```bash
+# Clone the repository
 git clone https://github.com/krishnan-Rama/SENTINEL.git
-cd sentinel
+cd SENTINEL
 
-conda env create -f environment.yml && conda activate sentinel
+# Set up Conda environment
+conda env create -f environment.yml
+conda activate sentinel
+
+# Verify environment, paths, and external binaries
+bin/sentinel doctor
 ```
 
-Run `bin/sentinel --help` for the complete command-line reference.
+> **Note:** External binaries such as `LocalColabFold` and `GROMACS` must reside in your system `$PATH` if running structural inference or explicit-solvent relaxation.
 
 ---
 
 ## Quickstart
 
+### 1. Set Up Configuration
+
+Copy the template configuration file and define your run parameters:
+
 ```bash
-# 1. Configure run parameters
 cp config/project.env config/my_run.env
 $EDITOR config/my_run.env
+```
 
-# 2. Check environment and inputs
+Specify your target protein, reference UniProt anchors, catalytic boundaries, and ligand structures directly inside `config/my_run.env`.
+
+### 2. Validate and Plan
+
+```bash
+# Audit inputs, tools, and path availability
 bin/sentinel -c config/my_run.env doctor
 
-# 3. Dry run: display execution plan
+# Dry-run execution plan without launching jobs
 bin/sentinel -c config/my_run.env -n run
+```
 
-# 4. Execute pipeline
+### 3. Run Pipeline
+
+Execute locally:
+```bash
 bin/sentinel -c config/my_run.env run
 ```
 
----
-
-## Pipeline Entry Points
-
-Resume or start the pipeline from intermediate data using `--entry`:
-
-| Existing Data | Command |
-|---|---|
-| Species list and toxicity table | `--entry sequences` (default) |
-| Predicted structures | `--entry structures --models DIR --alignment FILE` |
-| Docking poses | `--entry poses --docked DIR --alignment FILE` |
-| Descriptors and affinities | `--entry analysis` |
-
-### Execution Controls
-
-* **Optional stages:** `--with-ml-tree` (bootstrapped publication phylogeny) and `--with-minimise` (explicit-solvent energy minimisation).
-* **Caching:** Completed stages are automatically skipped on rerun. Use `--force` to recompute.
-
+Or dispatch heavy array jobs to a SLURM cluster:
 ```bash
-# Example: SLURM submission starting from AlphaFold models
-bin/sentinel -o ~/runs/cpf --entry structures \
-    --models ~/af_models --alignment ~/runs/cpf/CLASSIFY/aligned.a2m \
-    --gpu-partition gpu --partition epyc --account proj123 run
+bin/sentinel -c config/my_run.env \
+    --hpc slurm \
+    --partition standard \
+    --gpu-partition gpu \
+    --account proj123 \
+    run
 ```
 
 ---
 
-## HPC and Cluster Configuration
+## Modular Checkpoints & Reusable Metadata
 
-Job arrays for structural prediction (stage 5B) and docking (stage 8D) scale automatically to the input size.
+SENTINEL supports resuming from intermediate stages or executing downstream statistical models directly using provided metadata tables:
 
-| Flag | Description |
-|---|---|
-| `--hpc slurm\|local` | Submit array jobs via SLURM or output shell commands locally |
-| `--partition NAME` | CPU partition for docking, tree inference, and minimisation |
-| `--gpu-partition NAME` | GPU partition for ColabFold structure prediction |
-| `--account NAME` | SLURM account or allocation identifier |
-| `--max-parallel N` | Maximum number of concurrent array tasks |
-| `--threads N` | Thread allocation per task |
-
----
-
-## Pipeline Stages
-
-The workflow organises modular scripts into six core operational phases:
-
-| Phase | Stages | Description |
+| Input Available | Entry Command | Description |
 |---|---|---|
-| **1. Orthology & Phylogeny** | `1` to `3C` | Validate reference sequences, classify active-site residues, and infer lineage trees. |
-| **2. Endpoint Assembly** | `4A` to `4C` | Harmonise toxicity endpoints across species and compile master dataset tables. |
-| **3. Structural Modelling** | `5A` to `7` | Predict 3D model ensembles, screen pLDDT variance, and extract pocket descriptors. |
-| **4. Molecular Docking** | `8A` to `9B` | Prepare receptor grids, dock target and control ligands, and profile binding poses. |
-| **5. Evolutionary Analysis** | `10A` to `10B` | Quantify phylogenetic signal, fit clade-level regressions, and cross-validate. |
-| **6. Reporting** | `11` | Compile metrics into an interactive, self-contained HTML dashboard. |
+| Species accessions & raw data | `--entry sequences` | Full pipeline execution (Default). |
+| Precomputed 3D structures | `--entry structures --models DIR --alignment FILE` | Bypasses sequence search, MSA, and ColabFold. |
+| Docked receptor-ligand complexes | `--entry poses --docked DIR --alignment FILE` | Bypasses docking; extracts interaction descriptors. |
+| Curated metadata & affinity tables | `--entry analysis` | Skips all structural work; runs phylogenetic regressions and SSDs. |
 
-Further details on per-stage inputs and outputs are documented in [docs/STAGES.md](docs/STAGES.md).
+### Standalone Metadata Assets
 
----
+If you do not need to recompute structures or docking poses, you can use or adapt the processed metadata files directly:
 
-## Outputs
+* **`endpoint_final.tsv`**: Standardised and harmonised species toxicity endpoints across tested taxa. Useful for training independent machine learning models, re-fitting SSD curves, or validating species-specific thresholds.
+* **`prediction_final.tsv`**: Compiled docking descriptors, binding affinities, active-site classifications, and predicted species sensitivities. Adaptable for custom statistical pipelines, phylogenetic generalized least squares (PGLS), or exploratory data analysis in R/Python.
 
-All artefacts are saved to `--outdir`:
-
-* `master_table.csv`: Comprehensive sequence metadata, active-site residue calls, and orthologue classifications.
-* `MODEL/univariate_results.tsv`: Statistical summaries per descriptor, including phylogenetic signal, clade-specific correlations, and held-out clade cross-validation errors.
-* `DASHBOARD/index.html`: Self-contained interactive report with embedded results and validation summaries for offline sharing and archiving.
+To execute evolutionary regressions and dashboard generation directly from these tables:
+```bash
+bin/sentinel -c config/my_run.env --entry analysis --endpoints endpoint_final.tsv --predictions prediction_final.tsv run
+```
 
 ---
 
-## External Dependencies
+## Execution Options
 
-Verify installation paths using `bin/sentinel doctor`:
-
-| Tool | Pipeline Stage | Role |
-|---|---|---|
-| MAFFT (>= 7.5) | 3A, 3B, 3C | Multiple sequence alignment |
-| HMMER (>= 3.4) | 3A | Profile alignment |
-| FastTree | 3B | Clade assignment |
-| RAxML-NG (>= 1.2) | 3C | Maximum-likelihood phylogenetic inference |
-| LocalColabFold | 5B | Structural modelling |
-| AutoDock Vina | 8D | Molecular docking |
-| Open Babel & Meeko | 8A, 8C | Ligand preparation and PDBQT conversion |
-| RDKit | 8A | Chemoinformatics and validation |
-| GROMACS | 5C | Energy minimisation (optional) |
+* `--force`: Force recalculation of stages, bypassing cached intermediates.
+* `--with-ml-tree`: Infer maximum-likelihood phylogeny via RAxML-NG (replaces FastTree default).
+* `--with-minimise`: Run explicit-solvent energy minimisation via GROMACS prior to docking.
+* `--max-parallel N`: Set concurrency limit for cluster array jobs.
 
 ---
 
-## Adapting to New Targets
+## Pipeline Workflow
 
-1. **Define target anchors:** Update `ANCHORS` in `stages/1-anchors.py` with UniProt accessions, expected sequence lengths, and naming criteria.
-2. **Set catalytic framework:** Update the catalytic motif pattern and reference numbering in `stages/3A-classify_active_site.py`, and supply domain boundaries using `--domain START END`.
-3. **Configure ligand panel:** Specify active compounds and inactive chemical controls in `stages/8A-prepare_ligands.py`.
-4. **Supply toxicity data:** Format your experimental endpoint table as described in [docs/INPUTS.md](docs/INPUTS.md).
+```
+Raw Sequences & Chemical Structures
+              │
+              ▼
+[1] Orthology & Active-Site Screening  (MAFFT / HMMER)
+              │
+              ▼
+[2] 3D Structural Ensembles            (LocalColabFold)
+              │
+              ▼
+[3] Receptor Preparation & Docking     (AutoDock Vina / Meeko)
+              │
+              ▼
+[4] Evolutionary Sensitivity Models    (PGLS / Machine Learning)
+              │
+              ▼
+[5] Interactive Validation Dashboard   (HTML / Standalone)
+```
+
+---
+
+## Primary Outputs
+
+All generated artefacts are written to your configured output directory (`--outdir`):
+
+* `master_table.csv`: Curated sequence metadata, active-site residue calls, and aligned annotations.
+* `MODEL/univariate_results.tsv`: Model fit summaries, Pagel's $\lambda$ phylogenetic signals, and leave-one-clade-out cross-validation error metrics.
+* `DASHBOARD/index.html`: Self-contained interactive report featuring structural superpositions, predicted SSD curves, and diagnostic plots for offline sharing.
+
+---
+
+## Input Formats
+
+For detailed column schemas, sequence header formats, and chemical structure requirements (SDF/MOL2), see [docs/INPUTS.md](docs/INPUTS.md).
 
 ---
 
 ## Contact
 
-Rama Krishnan, School of Biosciences, Cardiff University: krishnanr1@cardiff.ac.uk
+**Rama Krishnan**  
+School of Biosciences, Cardiff University  
+Email: krishnanr1@cardiff.ac.uk
