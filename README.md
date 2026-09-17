@@ -2,7 +2,7 @@
 
 **S**pecies s**EN**sitivity from **T**arget **IN**teraction and **E**volutionary **L**ineage
 
-SENTINEL predicts cross-species chemical sensitivity distributions using target-ligand interactions and evolutionary phylogenetics. It provides an automated, auditable pipeline linking molecular initiating events to species-level sensitivity endpoints.
+SENTINEL predicts cross-species chemical sensitivity distributions (SSDs) using target-ligand interactions and evolutionary phylogenetics. It provides an automated, auditable pipeline linking molecular initiating events to species-level sensitivity endpoints.
 
 ---
 
