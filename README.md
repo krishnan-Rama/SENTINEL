@@ -19,7 +19,6 @@ cd SENTINEL
 conda env create -f environment.yml
 conda activate sentinel
 
-# Audit cluster paths, modules, and external binaries
 ```
 
 ### 2. Configuration and Submission
