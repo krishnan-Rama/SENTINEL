@@ -19,7 +19,7 @@ flowchart TD
         I3["Empirical Ecotoxicity Endpoints (LC50/EC50)"]
     end
 
-    subgraph ST1["Phase 1: Orthology & Lineage [SLURM CPU]"]
+    subgraph ST1["<h3>Phase 1: Orthology & Lineage [SLURM CPU]</h3>"]
         direction TB
         S1A["Target Homology & Domain Slicing<br/><b>HMMER v3.4</b> • <b>MAFFT v7.5</b>"]
         S1B{"Tree Engine"}
