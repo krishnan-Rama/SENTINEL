@@ -42,7 +42,7 @@ flowchart TD
     subgraph ST3["<h3>Phase 3: Molecular Docking [SLURM CPU]<h3>"]
         direction TB
         S3A["Ligand & Receptor Preparation<br/><b>RDKit</b> • <b>Meeko</b> • <b>Open Babel</b>"]
-        S3B["Conformational Docking Arrays<br/><b>AutoDock Vina</b>"]
+        S3B["Molecular Docking<br/><b>AutoDock Vina</b>"]
 
         S3A --> S3B
     end
