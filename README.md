@@ -81,30 +81,16 @@ Job arrays for structural prediction (stage 5B) and docking (stage 8D) scale aut
 
 ## Pipeline Stages
 
-```
-1     Verify reference sequences by accession
-2     Retrieve candidate orthologues per species
-3A    Positional active-site classification
-3B    Taxonomic clade assignment by FastTree
-3C    Bootstrapped publication phylogeny (optional)
-4A    Harmonise toxicity endpoints per species
-4B    Assemble endpoint and prediction datasets
-4C    Generate master sequence table
-5A    Extract catalytic domains and chunk sequences
-5B    Predict 5 structural models per sequence (GPU array)
-5C    Explicit-solvent minimisation (optional)
-6     Evaluate active-site pLDDT and seed variation
-7     Calculate binding gorge descriptors and ICC
-8A    Generate ligand panel with structural controls
-8B    Compute catalytic geometry and docking grid boxes
-8C    Prepare PDBQT files and assign protonation states
-8D    Multi-seed molecular docking (CPU array)
-9A    Quantify binding affinity, contacts, and near-attack poses
-9B    Map biphasic pocket occupancy along the gorge axis
-10A   Calculate phylogenetic signal and SSD distributions
-10B   Run phylogenetic regressions and cross-validation
-11    Compile standalone interactive HTML report
-```
+The workflow organises modular scripts into six core operational phases:
+
+| Phase | Stages | Description |
+|---|---|---|
+| **1. Orthology & Phylogeny** | `1` to `3C` | Validate reference sequences, classify active-site residues, and infer lineage trees. |
+| **2. Endpoint Assembly** | `4A` to `4C` | Harmonise toxicity endpoints across species and compile master dataset tables. |
+| **3. Structural Modelling** | `5A` to `7` | Predict 3D model ensembles, screen pLDDT variance, and extract pocket descriptors. |
+| **4. Molecular Docking** | `8A` to `9B` | Prepare receptor grids, dock target and control ligands, and profile binding poses. |
+| **5. Evolutionary Analysis** | `10A` to `10B` | Quantify phylogenetic signal, fit clade-level regressions, and cross-validate. |
+| **6. Reporting** | `11` | Compile metrics into an interactive, self-contained HTML dashboard. |
 
 Further details on per-stage inputs and outputs are documented in [docs/STAGES.md](docs/STAGES.md).
 
