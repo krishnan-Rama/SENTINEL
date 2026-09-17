@@ -31,7 +31,7 @@ flowchart TD
         S1B -->|Optional| S1D
     end
 
-    subgraph ST2["Phase 2: Structural Modelling [SLURM GPU]"]
+    subgraph ST2["<h3>Phase 2: Structural Modelling [SLURM GPU]<h3>"]
         direction TB
         S2A["Ensemble Folding & Quality Filtering<br/><b>LocalColabFold (AlphaFold2)</b>"]
         S2B["Explicit-Solvent Minimisation<br/><b>GROMACS</b> (--with-minimise)"]
@@ -39,7 +39,7 @@ flowchart TD
         S2A -.->|Optional| S2B
     end
 
-    subgraph ST3["Phase 3: Molecular Docking [SLURM CPU]"]
+    subgraph ST3["<h3>Phase 3: Molecular Docking [SLURM CPU]<h3>"]
         direction TB
         S3A["Ligand & Receptor Preparation<br/><b>RDKit</b> • <b>Meeko</b> • <b>Open Babel</b>"]
         S3B["Conformational Docking Arrays<br/><b>AutoDock Vina</b>"]
@@ -47,7 +47,7 @@ flowchart TD
         S3A --> S3B
     end
 
-    subgraph ST4["Phase 4: Evolutionary Sensitivity [Master Node]"]
+    subgraph ST4["<h3>Phase 4: Evolutionary Sensitivity [Master Node]<h3>"]
         direction TB
         S4A["Evolutionary Regressions & Sensitivity<br/><b>PGLS</b> • <b>Scikit-learn</b>"]
         S4B["Phylogenetic Signal & Validation<br/><b>Pagel's &lambda;</b> • <b>Clade Cross-Validation</b>"]
@@ -55,7 +55,7 @@ flowchart TD
         S4A --> S4B
     end
 
-    subgraph OUT["Primary Outputs"]
+    subgraph OUT["<h3>Primary Outputs<h3>"]
         direction TB
         O1["master_table.csv<br/><i>(Alignments, calls & metadata)</i>"]
         O2["MODEL/univariate_results.tsv<br/><i>(Signal & clade error metrics)</i>"]
