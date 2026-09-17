@@ -12,28 +12,81 @@ The pipeline is engineered for SLURM-managed HPC clusters, distributing GPU-acce
 
 ```mermaid
 flowchart TD
-    IN["<b>Inputs:</b> Sequences / Accessions • Ligands (.sdf) • Toxicity Endpoints (LC50)"]
-    S1["<b>1. Orthology & Phylogeny</b> <i>[SLURM CPU]</i><br/>HMMER v3.4 • MAFFT v7.5 • FastTree / RAxML-NG"]
-    S2["<b>2. Structural Modelling</b> <i>[SLURM GPU]</i><br/>LocalColabFold (AlphaFold2) • GROMACS (--with-minimise)"]
-    S3["<b>3. Molecular Docking</b> <i>[SLURM CPU]</i><br/>Open Babel • Meeko • RDKit • AutoDock Vina"]
-    S4["<b>4. Evolutionary Sensitivity Models</b> <i>[Master Node]</i><br/>PGLS Regressions • Pagel's &lambda; • Clade Cross-Validation"]
-    OUT["<b>Outputs:</b> master_table.csv • univariate_results.tsv • index.html"]
+    subgraph INP["Input Data"]
+        direction TB
+        I1["Target Sequences / Accessions"]
+        I2["Chemical Structures (.sdf / SMILES)"]
+        I3["Empirical Ecotoxicity Endpoints (LC50/EC50)"]
+    end
 
-    IN -->|--entry sequences| S1
-    S1 -->|--entry structures| S2
-    S2 -->|--entry poses| S3
-    S3 -->|--entry analysis| S4
-    S4 --> OUT
+    subgraph ST1["Phase 1: Orthology & Lineage [SLURM CPU]"]
+        direction TB
+        S1A["Target Homology & Domain Slicing<br/><b>HMMER v3.4</b> • <b>MAFFT v7.5</b>"]
+        S1B{"Tree Engine"}
+        S1C["Lineage Phylogeny<br/><b>FastTree</b> (Default)"]
+        S1D["Bootstrapped ML Tree<br/><b>RAxML-NG</b> (--with-ml-tree)"]
 
+        S1A --> S1B
+        S1B -->|Default| S1C
+        S1B -->|Optional| S1D
+    end
+
+    subgraph ST2["Phase 2: Structural Modelling [SLURM GPU]"]
+        direction TB
+        S2A["Ensemble Folding & Quality Filtering<br/><b>LocalColabFold (AlphaFold2)</b>"]
+        S2B["Explicit-Solvent Minimisation<br/><b>GROMACS</b> (--with-minimise)"]
+
+        S2A -.->|Optional| S2B
+    end
+
+    subgraph ST3["Phase 3: Molecular Docking [SLURM CPU]"]
+        direction TB
+        S3A["Ligand & Receptor Preparation<br/><b>RDKit</b> • <b>Meeko</b> • <b>Open Babel</b>"]
+        S3B["Conformational Docking Arrays<br/><b>AutoDock Vina</b>"]
+
+        S3A --> S3B
+    end
+
+    subgraph ST4["Phase 4: Evolutionary Sensitivity [Master Node]"]
+        direction TB
+        S4A["Evolutionary Regressions & Sensitivity<br/><b>PGLS</b> • <b>Scikit-learn</b>"]
+        S4B["Phylogenetic Signal & Validation<br/><b>Pagel's &lambda;</b> • <b>Clade Cross-Validation</b>"]
+
+        S4A --> S4B
+    end
+
+    subgraph OUT["Primary Outputs"]
+        direction TB
+        O1["master_table.csv<br/><i>(Alignments, calls & metadata)</i>"]
+        O2["MODEL/univariate_results.tsv<br/><i>(Signal & clade error metrics)</i>"]
+        O3["DASHBOARD/index.html<br/><i>(Interactive report & SSD curves)</i>"]
+    end
+
+    %% Wiring Inputs to Pipeline
+    I1 -->|--entry sequences| S1A
+    S1C -->|--entry structures| S2A
+    S1D -->|--entry structures| S2A
+    S2A -->|--entry poses| S3A
+    S2B -->|--entry poses| S3A
+    I2 --> S3A
+    S3B -->|--entry analysis| S4A
+    I3 --> S4A
+
+    %% Outputs
+    S4B --> O1
+    S4B --> O2
+    S4B --> O3
+
+    %% High-Contrast Styling (WCAG AAA Compliant)
     classDef io fill:#1e293b,stroke:#0f172a,stroke-width:2px,color:#ffffff;
     classDef cpu fill:#14532d,stroke:#052e16,stroke-width:2px,color:#ffffff;
     classDef gpu fill:#7f1d1d,stroke:#450a0a,stroke-width:2px,color:#ffffff;
     classDef master fill:#1e3a8a,stroke:#172554,stroke-width:2px,color:#ffffff;
 
-    class IN,OUT io;
-    class S1,S3 cpu;
-    class S2 gpu;
-    class S4 master;
+    class I1,I2,I3,O1,O2,O3 io;
+    class S1A,S1B,S1C,S1D,S3A,S3B cpu;
+    class S2A,S2B gpu;
+    class S4A,S4B master;
 ```
 
 ---
