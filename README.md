@@ -20,19 +20,25 @@ conda env create -f environment.yml
 conda activate sentinel
 ```
 
-### 2. Configuration and Submission
-
-All run parameters, sequence identifiers, domain boundaries, and ligand structures are configured in a run environment file.
+Verify binary discovery, environment modules, and general CLI options:
 
 ```bash
-# Generate and edit the run profile for your target system
+bin/sentinel --help
+```
+
+### 2. Configuration and Submission
+
+All target specifications, active-site boundaries, ligand paths, and compute parameters are defined in a run configuration file.
+
+```bash
+# Prepare run configuration from the template
 cp config/project.env config/my_run.env
 $EDITOR config/my_run.env
 
-# Dry run: validate inputs and display the execution plan
+# Validate inputs and inspect the execution graph
 bin/sentinel -c config/my_run.env -n run
 
-# Submit array jobs to SLURM
+# Dispatch array jobs to SLURM
 bin/sentinel -c config/my_run.env \
     --hpc slurm \
     --partition standard \
@@ -45,25 +51,24 @@ bin/sentinel -c config/my_run.env \
 
 ## Command-Line Interface
 
-Because the executable does not provide an interactive `--help` menu, use the invocation syntax and options documented below:
-
 ```text
-bin/sentinel -c <config.env> [OPTIONS] run
+bin/sentinel -c <config.env> [OPTIONS] <COMMAND>
 ```
+
+### Commands
+
+* `run`: Execute the planned pipeline workflow.
+* `--help`: Print the command-line interface reference and argument defaults.
 
 ### Execution Options
 
 * `-n`: Dry-run mode. Displays planned execution steps and task counts without dispatching jobs.
-* `--entry <STAGE>`: Resume or start from intermediate checkpoints.
-  * `sequences`: Default. Runs the full workflow from initial sequence sets.
-  * `structures --models <DIR> --alignment <FILE>`: Skips structure prediction; proceeds to docking.
-  * `poses --docked <DIR> --alignment <FILE>`: Skips docking; extracts descriptors and fits models.
-  * `analysis`: Runs only phylogenetic models, cross-validation, and report generation.
-* `--force`: Ignores cached outputs and forces recomputation of specified stages.
-* `--with-ml-tree`: Infers a maximum-likelihood phylogeny using RAxML-NG instead of the FastTree default.
-* `--with-minimise`: Runs explicit-solvent energy minimisation via GROMACS prior to docking.
+* `--entry <STAGE>`: Resume or start from intermediate checkpoints (see table below).
+* `--force`: Disregard cached outputs and force recomputation of specified stages.
+* `--with-ml-tree`: Infer a maximum-likelihood phylogeny via RAxML-NG instead of the FastTree heuristic.
+* `--with-minimise`: Execute explicit-solvent energy minimisation via GROMACS prior to docking.
 
-### SLURM Flags
+### SLURM Resource Flags
 
 * `--hpc slurm|local`: Execution mode (default: `local`).
 * `--partition <NAME>`: CPU partition for alignments, tree inference, and docking.
@@ -74,13 +79,26 @@ bin/sentinel -c <config.env> [OPTIONS] run
 
 ---
 
+## Modular Entry Points
+
+Use `--entry` to resume from intermediate checkpoints or inject existing precomputed data. Completed stages are cached automatically.
+
+| Input State | CLI Invocation | Pipeline Scope |
+|---|---|---|
+| Species accessions and endpoints | `--entry sequences` (default) | Executes full pipeline from alignment onward. |
+| Precomputed 3D structures | `--entry structures --models <DIR> --alignment <FILE>` | Skips ColabFold; proceeds to docking. |
+| Docked receptor-ligand poses | `--entry poses --docked <DIR> --alignment <FILE>` | Skips docking; extracts descriptors and fits models. |
+| Feature matrices and affinities | `--entry analysis` | Executes regressions, phylogenetic models, and report generation. |
+
+---
+
 ## Primary Outputs
 
-All pipeline artefacts are written to the directory specified by `--outdir` in your configuration file:
+All generated artefacts are written to the directory specified by `--outdir` in your configuration file:
 
 * `master_table.csv`: Consolidated dataset of sequence accessions, active-site residue calls, orthologue validation, and harmonised endpoints.
 * `MODEL/univariate_results.tsv`: Statistical summaries per descriptor, including phylogenetic signal (Pagel's $\lambda$) and leave-one-clade-out cross-validation error.
-* `DASHBOARD/index.html`: Self-contained interactive report displaying alignments, binding poses, and predicted SSD curves.
+* `DASHBOARD/index.html`: Self-contained interactive report displaying structural alignments, binding poses, and predicted SSD curves.
 
 ---
 
