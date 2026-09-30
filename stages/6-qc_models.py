@@ -2,23 +2,6 @@
 """
 QC the ColabFold models where it matters: the active site.
 
-Whole-model pLDDT is the wrong statistic for this study. A model can average 92
-while the acyl pocket is ragged, and it will still dock and still return a
-number. What decides whether a species is usable is the confidence at the 16
-Torpedo-numbered positions your classifier reads and your docking box sits on.
-
-Two things are measured:
-
-  1. Per-residue pLDDT at the active-site positions, mapped through the same
-     alignment frame used for trimming, so the same structural position is
-     inspected in every species.
-
-  2. Between-seed active-site RMSD. All five models are superposed on rank 1 by
-     their CA atoms, then the RMSD of the active-site CAs is computed. This is
-     your NOISE FLOOR. Any between-species difference in gorge geometry smaller
-     than this number is not measurable with these structures, and knowing it
-     before docking is the difference between a result and an artefact.
-
   module purge
   module load Python/3.11.5-GCCcore-13.2.0 SciPy-bundle/2025.07-gfbf-2025b
   python3 6-qc_models.py --models FOLD/models --aln ../CLASSIFY/aligned.a2m \\
