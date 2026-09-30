@@ -11,30 +11,6 @@
 #
 #   ROOT=$PWD sbatch 5C-minimise.slurm FOLD/models EM
 #
-# Read this before running it
-# ---------------------------
-# ColabFold's --amber flag already performs a restrained minimisation, and for
-# RIGID-RECEPTOR docking that is usually sufficient. This script exists for two
-# other reasons: it removes the position restraints so side chains relax
-# without bias toward the predicted rotamer, and it puts the protein in
-# explicit solvent with counter-ions, which matters if you later run MD.
-#
-# If your next step is Vina or smina on a rigid receptor, you can skip this and
-# lose very little. If you are going on to MD, you need it.
-#
-# The thing that actually affects your docking is NOT minimisation
-# ----------------------------------------------------------------
-# It is the protonation state of the catalytic histidine. In acetylcholinesterase
-# His440 (Torpedo numbering) must be neutral with the proton on Nd1, so that Ne2
-# faces Ser200 Og and can accept its proton. That is HID in Amber naming, HISD in
-# GROMACS. pdb2gmx assigns histidine tautomers from local hydrogen-bond geometry
-# and gets the catalytic histidine wrong often enough that it must be checked,
-# not assumed. Get it wrong and the nucleophile is not activated, and every
-# docking score in the study inherits the error.
-#
-# This script reports which tautomer was assigned for every histidine near the
-# catalytic serine. It does not silently override it, because forcing a state
-# without looking is how the error becomes invisible.
 
 set -euo pipefail
 
