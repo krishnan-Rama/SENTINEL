@@ -4,21 +4,6 @@ Assign AChE candidates by tree topology, and pick one representative per species
 
 Why this exists
 ---------------
-The residue classifier tests the acyl pocket in three states and I named those
-states taxonomically: Phe/Phe as "vertebrate", non-Phe/Phe as "invertebrate".
-That was wrong. The residues are a real observation; the labels assert a lineage
-claim two positions cannot carry. The visible consequence in your output is six
-teleosts carrying an `AChE_invertebrate` call, which is not a thing.
-
-Clade membership is the evidence for what a sequence is. This script builds one
-tree from every AChE call plus the verified anchors, and assigns each candidate
-to its nearest anchor by patristic distance, reporting the margin to the runner
-up so borderline cases are visible rather than silently decided.
-
-It also selects one representative per species, preferring the candidate that
-sits closest to the anchor appropriate for that species' lineage. Where the tree
-and the residue call disagree, both are reported and the row is flagged. Do not
-resolve those by deleting a column.
 
 Outputs
 -------
