@@ -2,20 +2,7 @@
 """
 Receptor PDBQT conversion, with a check that the histidine work survived it.
 
-The trap
 --------
-8B-prep_receptors.py established that all 82 catalytic triads are correctly oriented
-and renamed the catalytic histidine HID so that Ne2 is free to accept the proton
-from Ser Og. Conversion tools then add hydrogens according to their own rules.
-Open Babel does not recognise HID as a histidine tautomer directive; asked to
-protonate at pH 7.4 it will place the proton wherever its own logic says, and
-can put it on Ne2, which blocks the acceptor and un-activates the nucleophile in
-every structure. The careful work upstream is undone silently.
-
-So this script converts, then INSPECTS the result: it looks for a polar hydrogen
-on Nd1 and the absence of one on Ne2 for the catalytic histidine in each output,
-and reports any structure where that is not the case. A receptor failing this
-check should not be docked.
 
   module load micromamba/2.8.1
   export PATH=/mnt/ecotox/GROUP-smbpk/c23048124/envs/dock/bin:$PATH
