@@ -11,17 +11,6 @@
 #
 #   sbatch --array=0-81 8D-dock.slurm RECEPTORS/pdbqt LIGANDS DOCKED
 #
-# Each receptor gets its OWN box, read from RECEPTORS/receptor_prep.tsv. The
-# gorge axis differs between species, which is the entire point of the study; a
-# shared box would impose one species' geometry on all 82 and manufacture
-# exactly the kind of artefactual uniformity the analysis is meant to detect.
-#
-# --exhaustiveness 32 rather than the default 8. The gorge is a deep narrow
-# channel and the default search under-samples it, which shows up as run to run
-# scatter of several kJ/mol on the same input. --seed is fixed so the run is
-# reproducible, and 3 independent seeds are run per pair so the docking noise
-# can be quantified the same way the structural noise was. A score whose
-# between-seed spread exceeds the between-species spread is not a measurement.
 
 set -euo pipefail
 
