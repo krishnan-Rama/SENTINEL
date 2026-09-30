@@ -7,29 +7,6 @@
 #SBATCH --output=logs/phylo_%j.out
 #SBATCH --error=logs/phylo_%j.err
 
-# Rebuild the AChE tree for publication rather than for clade assignment.
-#
-# What was wrong with the first tree
-# ----------------------------------
-# It was built from hmmalign match states. Match-state extraction DELETES every
-# insert column, and the profile came from only 14 anchor sequences, six of them
-# vertebrate. Any region not represented in that small, vertebrate-leaning model
-# became an insert and was discarded for all 276 sequences. The regions most
-# likely to resolve relationships within Pancrustacea are precisely the ones
-# that diverge from a vertebrate-dominated seed, so they were the first to go.
-#
-# This realigns the sequences themselves with L-INS-i, trims by gap fraction,
-# and runs a proper ML search with bootstraps.
-#
-# What it will NOT fix
-# --------------------
-# A gene tree of a duplicated family groups by paralogue before taxonomy. Insect
-# ace1 sequences will sit with other ace1 sequences rather than with the ace2 of
-# the same species, and Hexapoda is nested inside Crustacea, so Malacostraca and
-# Branchiopoda are not expected to be reciprocally monophyletic with Insecta.
-# Intermixing of those three classes is the correct result, not a failure.
-# If you need a tree for PGLS, use a dated SPECIES tree, not this.
-
 set -euo pipefail
 
 module purge
