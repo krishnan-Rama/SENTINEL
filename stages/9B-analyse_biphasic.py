@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
 """
-Bi-phasic analysis of the AChE gorge, from poses you already have.
-
-The mechanism
--------------
-The AChE active site is a narrow gorge with two ligand binding sites: a
-peripheral site (P-site) at the mouth and an acylation site (A-site) at the
-base. Organophosphates are captured at the P-site, descend the gorge, and
-phosphorylate the catalytic serine at the A-site. Between them sits a
-free-energy basin at Trp84 (W86 in mammalian numbering) formed by cation-pi
-interactions, which is where an unconstrained docking search will settle
-because it is the thermodynamic minimum of the NON-COVALENT complex.
-
-That is exactly what your first analysis found: median Ser Og to P of 7.9 A,
-Trp84 contacted in 81 of 82 species, and no pose within 4 A of the serine. The
-docking did not fail; it reported the basin the literature says is there. The
-reactive pose is a higher-energy transient state and a rigid docking score will
-never rank it first.
-
 What this script does
 ---------------------
 Rather than taking the single best pose, it reads EVERY mode from EVERY seed
