@@ -2,29 +2,6 @@
 """
 Structural descriptors of the AChE gorge, with an honest noise model.
 
-Why this computes everything five times
----------------------------------------
-Your gorge lengths span 12.2 to 14.5 A across 82 species, SD 0.66 A. Your
-between-seed all-atom RMSD at the active site runs from 0.22 to 1.50 A. For the
-noisiest species the prediction noise is comparable to the entire between-species
-range. A descriptor computed from one model per species cannot distinguish a
-species difference from a seed difference, and no amount of downstream
-statistics repairs that.
-
-So every descriptor is computed on all five relaxed models per species, and the
-variance is partitioned: sigma^2 between species against sigma^2 within species
-(between seeds). The intraclass correlation, ICC = s2b / (s2b + s2w), is the
-fraction of the descriptor's variance that is actually about species.
-
-  ICC > 0.75   usable; species differences dominate prediction noise
-  ICC 0.5-0.75 marginal; report with the ICC and expect wide CIs in the model
-  ICC < 0.5    the descriptor is mostly seed noise. Do NOT put it in a PGLS
-               and then interpret its coefficient.
-
-Reporting the ICC alongside every structural predictor is the thing that
-separates this from a comparative docking paper that computed one model each
-and never checked.
-
 Descriptors
 -----------
   gorge_length        Ser Og to the peripheral anionic site centroid
