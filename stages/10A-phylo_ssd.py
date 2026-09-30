@@ -10,18 +10,6 @@ Steps, each writing a figure:
   5  species sensitivity distribution and HC5                   fig5_ssd
   6  LC50 by class and by clade                                 fig6_by_class
 
-Read step 4 before you invest in docking. If lambda is near 1, almost all the
-interspecies variance in acute sensitivity is explained by shared ancestry, and
-whatever a structural predictor can add is confined to the residual. That is a
-publishable result either way, and it costs a minute here against months of
-docking.
-
-One caveat you must carry: the tree used here is the AChE GENE tree, not a dated
-species tree. A gene tree conflates sequence divergence with time and can be
-distorted by paralogy and rate variation, so the lambda estimate is a first-pass
-diagnostic, not the final number. Pass --tree with a dated species tree
-(TimeTree or similar) for the version that goes in the paper.
-
   module purge
   module load Python/3.11.5-GCCcore-13.2.0 SciPy-bundle/2025.07-gfbf-2025b
   python3 10A-phylo_ssd.py --report REPORT --classify CLASSIFY --tree TREE \\
