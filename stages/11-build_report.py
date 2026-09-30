@@ -4,27 +4,6 @@ Build a single-file tiered dashboard from the pipeline outputs.
 
 Design constraint that shapes everything else
 ---------------------------------------------
-A dashboard that presents a species ranking without the evidence for whether
-that ranking is trustworthy would automate the failure this pipeline exists to
-detect. So the dashboard is GATED: the model-validation status is computed
-first, and the prediction tab states plainly which predictors survived
-correction and which did not. If none survived, it says so at the top, in the
-banner, before any table.
-
-What it predicts, and why that is not the structural descriptors
-----------------------------------------------------------------
-When phylogenetic signal in the endpoint is high, the best available predictor
-of an unmeasured species is its relatives, not its protein geometry. Prediction
-here is therefore phylogenetic imputation under Brownian motion with Pagel's
-lambda: the conditional expectation of an unobserved tip given the observed
-tips and the tree, with a credible interval from the conditional variance. That
-is standard read-across, made quantitative. It is honest about what the data
-supports and it is useful to a regulator in a way a non-validated structural
-ranking is not.
-
-Output is one HTML file with the data embedded. No server, no CDN, no network.
-It can be emailed, archived alongside a dossier, or opened offline.
-
   module purge
   module load Python/3.11.5-GCCcore-13.2.0 SciPy-bundle/2025.07-gfbf-2025b
   python3 11-build_report.py --root . --outdir DASHBOARD
