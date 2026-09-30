@@ -2,36 +2,6 @@
 """
 Prepare sequences for structure prediction.
 
-Why trimming is not optional
-----------------------------
-The OrthoDB sequences are full precursors. Every one carries an N-terminal
-signal peptide, and most carry a C-terminal region (the tetramerisation /
-WAT-PRAD domain in vertebrates, the GPI-anchor attachment signal in invertebrate
-AChE1) that is cleaved or membrane-associated and is not part of the catalytic
-domain.
-
-Folding them intact does three specific kinds of damage to this study:
-
-  1. The signal peptide is a hydrophobic helix with no native context. AlphaFold
-     places it somewhere, and in a fraction of models it lies across the gorge
-     mouth. Any gorge volume or docking box computed from those models is
-     measuring an artefact.
-  2. The C-terminal region is disordered in the monomer and inflates the
-     bounding box, which shifts a box centred on the structure rather than on
-     the catalytic serine.
-  3. Both regions have low pLDDT and drag down the whole-model score, so a
-     model with an excellent catalytic domain looks poor and one with a lucky
-     terminus looks fine. Whole-model pLDDT stops being comparable across
-     species, which is exactly the comparison you need.
-
-How the boundaries are set
---------------------------
-Not by a sequence-length heuristic and not by SignalP. The profile alignment you
-already have defines a shared coordinate frame, so the cut points are the
-columns corresponding to Torpedo mature residues --start and --end. Every
-sequence is cut at the same structural position, which is the only way the
-resulting models are comparable.
-
 Defaults span the mature catalytic domain as crystallised in 1EA5. Residues in
 insert columns inside that span are kept; only material outside it is removed.
 
