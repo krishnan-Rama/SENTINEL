@@ -2,32 +2,6 @@
 """
 Active-site positional classifier.
 
-Takes the 9,558 OrthoDB candidates and separates AChE from BChE, carboxylesterase
-and the catalytically dead members, using residues rather than annotation.
-
-Why not just filter on the description column
----------------------------------------------
-2,128 of your entries have a description that matches nothing, and OrthoDB
-descriptions in non-model invertebrates are inherited from automated transfer.
-Filtering on the word "acetylcholinesterase" would keep mislabelled CES and
-discard correctly-folded AChE that nobody named. The residues are the evidence.
-
-How the coordinate frame is established
----------------------------------------
-All sequences are aligned to a profile built from your verified anchor set, so
-every sequence shares one column frame. The Torpedo anchor is then used to map
-Torpedo mature numbering (Ser200, Phe288, Phe290, Trp279 and so on) onto those
-columns.
-
-The UniProt entry P04058 includes a signal peptide, so its numbering is offset
-from the mature numbering used in the structural literature. This script does
-NOT assume the offset. It locates the catalytic serine by the nucleophile elbow
-motif, sets offset = (its UniProt position) - 200, prints the value, and then
-validates the whole mapping by checking that the anchors give the residues they
-are supposed to give. If human AChE does not come back as Phe/Phe at 288/290 and
-human BChE as Leu/Val, the mapping is wrong and the script stops. Do not edit
-that check out.
-
 Classification
 --------------
   triad broken                      -> dead        (neuroligin, gliotactin)
