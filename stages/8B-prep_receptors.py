@@ -2,32 +2,6 @@
 """
 Receptor preparation: catalytic triad orientation and the docking box.
 
-The two things that silently ruin comparative OP docking
---------------------------------------------------------
-1. THE CATALYTIC HISTIDINE IS OFTEN FLIPPED. In a serine hydrolase triad,
-   His Ne2 accepts the proton from Ser Og, and His Nd1 donates to the Glu
-   carboxylate. Structure prediction (and crystallography) frequently place the
-   imidazole ring 180 degrees out, because Nd1/Ne2 and Cd2/Ce1 are nearly
-   isosteric and the density or the model cannot tell them apart. If Ne2 is not
-   the nitrogen facing Ser Og, the nucleophile is not activated in the structure
-   you dock into, and every score in the study inherits the error.
-
-   This script measures both distances, flips the ring where they are reversed,
-   and renames the residue HID (neutral, proton on Nd1) so downstream tools do
-   not reassign it.
-
-2. THE BOX IS USUALLY CENTRED ON THE WRONG THING. Centring on the protein, or
-   on the catalytic serine alone, either misses the gorge or clips the
-   trichloropyridinol leaving group, which must point out toward the gorge
-   mouth for a phosphorylation-competent pose. Here the box is built along the
-   actual gorge axis: from the Ser Og at the base to the centroid of the
-   peripheral anionic site (Trp279, Tyr70, Asp72, Tyr121) at the mouth,
-   computed per structure. Gorge geometry differs between species; a single
-   shared box would impose one species' geometry on all of them.
-
-Outputs a corrected PDB per species, a per-structure box, and a report you must
-read before docking.
-
   module purge
   module load Python/3.11.5-GCCcore-13.2.0 SciPy-bundle/2025.07-gfbf-2025b
   python3 8B-prep_receptors.py --models QC/best_models --aln ../CLASSIFY/aligned.a2m \\
