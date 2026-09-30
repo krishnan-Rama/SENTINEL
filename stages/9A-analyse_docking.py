@@ -1,35 +1,5 @@
 #!/usr/bin/env python3
 """
-Post-docking analysis, in the order the conclusions depend on each other.
-
-  1  AFFINITY NOISE. Three seeds per receptor-ligand pair were run for the same
-     reason five models per species were: to find out whether the between-species
-     spread in score exceeds the between-seed spread. ICC per ligand. If a
-     ligand's ICC is low, its affinities are not a species measurement and no
-     regression on them means anything.
-
-  2  NEAR-ATTACK GEOMETRY, for the oxon only. A Vina score is a non-covalent
-     affinity; organophosphate potency is k2/Kd and nothing in a docking score
-     touches k2. What a pose CAN tell you is whether the reactive geometry is
-     reachable: the distance from Ser Og to the phosphorus, and how close the
-     Og-P-O(leaving) angle comes to the 180 degrees required for in-line
-     phosphoryl transfer. These are physically interpretable and comparable
-     across species in a way that a score is not.
-
-  3  CONTACT FINGERPRINTS in Torpedo numbering. Every model residue is mapped
-     through the alignment to a Torpedo mature position, so "the ligand touches
-     position 288" means the same thing in a fish and a water flea. This is the
-     interaction-level comparison, and it is the part that can show WHICH
-     residues differ where sensitivity differs.
-
-  4  CONTROL DIAGNOSTIC. Each ligand's affinity is correlated against log10
-     LC50 separately. Chlorpyrifos itself cannot inhibit AChE without CYP
-     desulfuration, and TCP cannot phosphorylate anything at all. If either
-     predicts LC50 as well as the oxon does, the pipeline is ranking
-     lipophilicity or generic gorge accommodation rather than target
-     engagement. That is the single most important number in this script and
-     it is designed to be able to falsify the whole approach.
-
   module load micromamba/2.8.1
   export PATH=/mnt/ecotox/GROUP-smbpk/c23048124/envs/dock/bin:$PATH
   python3 9A-analyse_docking.py --docked DOCKED --receptors RECEPTORS/prepped \\
