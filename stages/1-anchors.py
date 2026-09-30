@@ -2,11 +2,6 @@
 """
 S1a: Rebuild the reference backbone by verified accession.
 
-Replaces the gene-name query approach in the first version of S1, which
-silently returned P02795 (metallothionein-2, 61 aa) for the CES1 slot because
-UniProt's gene field matched loosely. That sequence would have been written
-into the backbone and used to root the AChE / BChE / CCE placement in S3.
-
 Two changes:
   1. Anchors are fetched by accession, not by gene-name query.
   2. Every anchor is checked against an expected length window and a required
